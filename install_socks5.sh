@@ -2,7 +2,7 @@
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then 
-  echo "Please run as root"
+  echo "请使用 root 权限运行此脚本"
   exit 1
 fi
 
@@ -12,22 +12,22 @@ PASS=${2}
 PORT=${3:-1080}
 
 if [ -z "$USER" ]; then
-    read -p "Enter SOCKS5 Username: " USER
+    read -p "请输入 SOCKS5 用户名: " USER
 fi
 
 if [ -z "$PASS" ]; then
-    read -s -p "Enter SOCKS5 Password: " PASS
+    read -s -p "请输入 SOCKS5 密码: " PASS
     echo ""
 fi
 
 if [ -z "$PORT" ]; then
-    read -p "Enter SOCKS5 Port (default 1080): " PORT
+    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT
     PORT=${PORT:-1080}
 fi
 
-echo "Installing SOCKS5 server with:"
-echo "User: $USER"
-echo "Port: $PORT"
+echo "正在安装 SOCKS5 服务器，配置如下:"
+echo "用户: $USER"
+echo "端口: $PORT"
 
 # Update and install dante-server
 apt-get update
@@ -38,7 +38,7 @@ INTERFACE=$(ip route get 1.1.1.1 | awk '{print $5; exit}')
 if [ -z "$INTERFACE" ]; then
     INTERFACE="eth0"
 fi
-echo "Detected interface: $INTERFACE"
+echo "检测到的网络接口: $INTERFACE"
 
 # Configure dante-server
 mv /etc/danted.conf /etc/danted.conf.bak
@@ -70,9 +70,9 @@ EOF
 
 # Create user if not exists, or update password
 if id "$USER" &>/dev/null; then
-    echo "User $USER already exists, updating password..."
+    echo "用户 $USER 已存在，正在更新密码..."
 else
-    echo "Creating user $USER..."
+    echo "正在创建用户 $USER..."
     useradd -r -s /bin/false $USER
 fi
 echo "$USER:$PASS" | chpasswd
@@ -80,7 +80,7 @@ echo "$USER:$PASS" | chpasswd
 # Allow port in ufw if active
 if ufw status | grep -q "Status: active"; then
     ufw allow $PORT/tcp
-    echo "Allowed port $PORT in UFW."
+    echo "已在 UFW 防火墙中开放端口 $PORT。"
 fi
 
 # Restart service
@@ -90,12 +90,12 @@ systemctl enable danted
 # Check status
 if systemctl is-active --quiet danted; then
     echo "=========================================="
-    echo "SOCKS5 Server installed and running!"
-    echo "Address: $(curl -s ifconfig.me):$PORT"
-    echo "User:    $USER"
-    echo "Pass:    ******"
+    echo "SOCKS5 服务器已安装并成功运行！"
+    echo "地址: $(curl -s ifconfig.me):$PORT"
+    echo "用户:    $USER"
+    echo "密码:    ******"
     echo "=========================================="
 else
-    echo "Error: dante-server failed to start."
+    echo "错误: dante-server 启动失败。"
     systemctl status danted
 fi
