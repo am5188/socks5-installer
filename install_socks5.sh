@@ -84,6 +84,16 @@ if [ -z "$INTERFACE" ]; then
 fi
 echo "检测到的网络接口: $INTERFACE"
 
+# Stop existing service to prevent port conflict
+echo "正在停止旧服务..."
+systemctl stop danted 2>/dev/null
+killall danted 2>/dev/null
+
+# Check if port is still in use
+if command -v fuser >/dev/null; then
+    fuser -k -n tcp "$PORT" 2>/dev/null
+fi
+
 # Configure dante-server
 mv /etc/danted.conf /etc/danted.conf.bak
 cat > /etc/danted.conf <<EOF
