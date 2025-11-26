@@ -12,16 +12,16 @@ PASS=${2}
 PORT=${3:-1080}
 
 if [ -z "$USER" ]; then
-    read -p "请输入 SOCKS5 用户名: " USER
+    read -p "请输入 SOCKS5 用户名: " USER < /dev/tty
 fi
 
 if [ -z "$PASS" ]; then
-    read -s -p "请输入 SOCKS5 密码: " PASS
+    read -s -p "请输入 SOCKS5 密码: " PASS < /dev/tty
     echo ""
 fi
 
 if [ -z "$PORT" ]; then
-    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT
+    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT < /dev/tty
     PORT=${PORT:-1080}
 fi
 
