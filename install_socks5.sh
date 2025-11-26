@@ -6,32 +6,67 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Force input from terminal if running via pipe
-if [ -t 0 ]; then
-    :
-else
-    if [ -e /dev/tty ]; then
-        exec 0</dev/tty
-    fi
-fi
-
-# Get arguments or prompt
+# Get arguments
 USER=${1}
 PASS=${2}
 PORT=${3:-1080}
 
+# Function to read input directly from TTY
+get_input() {
+    PROMPT="$1"
+    DEFAULT="$2"
+    IS_SECURE="$3"
+    
+    # Try to find available TTY
+    if [ -c "/dev/tty" ]; then
+        TTY_DEV="/dev/tty"
+    else
+        echo "错误: 无法访问控制台终端。如果您在使用 curl | bash，请尝试使用 bash <(curl ...)" >&2
+        exit 1
+    fi
+
+    if [ "$IS_SECURE" = "true" ]; then
+        # Password input
+        printf "%s" "$PROMPT" > "$TTY_DEV"
+        read -r -s INPUT < "$TTY_DEV"
+        echo "" > "$TTY_DEV" # Newline after password
+    else
+        # Normal input
+        printf "%s" "$PROMPT" > "$TTY_DEV"
+        read -r INPUT < "$TTY_DEV"
+    fi
+    
+    if [ -z "$INPUT" ]; then
+        echo "$DEFAULT"
+    else
+        echo "$INPUT"
+    fi
+}
+
 if [ -z "$USER" ]; then
-    read -p "请输入 SOCKS5 用户名: " USER
+    USER=$(get_input "请输入 SOCKS5 用户名: " "")
+fi
+
+# Validate USER is not empty
+if [ -z "$USER" ]; then
+    echo "错误: 用户名不能为空。"
+    exit 1
 fi
 
 if [ -z "$PASS" ]; then
-    read -s -p "请输入 SOCKS5 密码: " PASS
-    echo ""
+    PASS=$(get_input "请输入 SOCKS5 密码: " "" "true")
 fi
 
-if [ -z "$PORT" ]; then
-    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT
-    PORT=${PORT:-1080}
+# Validate PASS is not empty
+if [ -z "$PASS" ]; then
+    echo "错误: 密码不能为空。"
+    exit 1
+fi
+
+if [ -z "$PORT" ] || [ "$PORT" = "1080" ]; then
+    # If PORT was passed as arg but default (or empty check fell through), confirm with user
+    # But here logic is: if arg is empty, ask.
+    PORT=$(get_input "请输入 SOCKS5 端口 (默认 1080): " "1080")
 fi
 
 echo "正在安装 SOCKS5 服务器，配置如下:"
