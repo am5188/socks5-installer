@@ -15,17 +15,30 @@
 
 直接复制以下命令到终端运行，脚本会引导您输入配置信息：
 
+#### 使用 `wget`
 ```bash
 wget -O - https://raw.githubusercontent.com/am5188/socks5-installer/main/install_socks5.sh | bash
+```
+
+#### 使用 `curl`
+```bash
+curl -fsSL https://raw.githubusercontent.com/am5188/socks5-installer/main/install_socks5.sh | bash
 ```
 
 ### 方式二：静默安装 (自定义参数)
 
 如果您需要自动化部署，可以直接在命令行中指定参数：
 
+#### 使用 `wget`
 ```bash
 # 用法: ... | bash -s -- <用户名> <密码> <端口>
 wget -O - https://raw.githubusercontent.com/am5188/socks5-installer/main/install_socks5.sh | bash -s -- myuser mypassword123 1080
+```
+
+#### 使用 `curl`
+```bash
+# 用法: ... | bash -s -- <用户名> <密码> <端口>
+curl -fsSL https://raw.githubusercontent.com/am5188/socks5-installer/main/install_socks5.sh | bash -s -- myuser mypassword123 1080
 ```
 
 ## 🎮 管理命令 (am)
