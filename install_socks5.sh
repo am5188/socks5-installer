@@ -77,6 +77,15 @@ else
 fi
 echo "$USER:$PASS" | chpasswd
 
+# Track the initial user
+USER_FILE="/etc/socks5_users"
+if [ ! -f "$USER_FILE" ]; then
+    touch "$USER_FILE"
+fi
+if ! grep -q "^$USER$" "$USER_FILE"; then
+    echo "$USER" >> "$USER_FILE"
+fi
+
 # Allow port in ufw if active
 if ufw status | grep -q "Status: active"; then
     ufw allow $PORT/tcp
@@ -87,6 +96,168 @@ fi
 systemctl restart danted
 systemctl enable danted
 
+# Create 'am' management script
+cat > /usr/local/bin/am <<'EOF'
+#!/bin/bash
+
+USER_FILE="/etc/socks5_users"
+
+# Ensure user file exists
+if [ ! -f "$USER_FILE" ]; then
+    touch "$USER_FILE"
+fi
+
+function check_root() {
+    if [ "$EUID" -ne 0 ]; then 
+      echo "请使用 root 权限运行 am 命令"
+      exit 1
+    fi
+}
+
+function add_user() {
+    read -p "请输入新用户名: " NEW_USER
+    if id "$NEW_USER" &>/dev/null; then
+        echo "错误: 用户 $NEW_USER 已存在。"
+        read -s -p "按回车键继续..."
+        return
+    fi
+    read -s -p "请输入密码: " NEW_PASS
+    echo ""
+    
+    useradd -r -s /bin/false "$NEW_USER"
+    echo "$NEW_USER:$NEW_PASS" | chpasswd
+    echo "$NEW_USER" >> "$USER_FILE"
+    echo "用户 $NEW_USER 添加成功！"
+    read -s -p "按回车键继续..."
+}
+
+function del_user() {
+    echo "当前用户列表:"
+    cat "$USER_FILE"
+    echo "------------------------"
+    read -p "请输入要删除的用户名: " DEL_USER
+    
+    if ! id "$DEL_USER" &>/dev/null; then
+        echo "错误: 用户不存在。"
+    else
+        userdel "$DEL_USER"
+        sed -i "/^$DEL_USER$/d" "$USER_FILE"
+        echo "用户 $DEL_USER 已删除。"
+    fi
+    read -s -p "按回车键继续..."
+}
+
+function mod_user() {
+    echo "当前用户列表:"
+    cat "$USER_FILE"
+    echo "------------------------"
+    read -p "请输入要修改密码的用户名: " MOD_USER
+    
+    if ! id "$MOD_USER" &>/dev/null; then
+        echo "错误: 用户不存在。"
+    else
+        read -s -p "请输入新密码: " NEW_PASS
+        echo ""
+        echo "$MOD_USER:$NEW_PASS" | chpasswd
+        echo "用户 $MOD_USER 密码修改成功。"
+    fi
+    read -s -p "按回车键继续..."
+}
+
+function list_users() {
+    echo "=== SOCKS5 用户列表 ==="
+    if [ -s "$USER_FILE" ]; then
+        cat "$USER_FILE"
+    else
+        echo "(无用户记录)"
+    fi
+    echo "======================"
+    read -s -p "按回车键继续..."
+}
+
+function check_status() {
+    echo "=== SOCKS5 运行状态 ==="
+    if systemctl is-active --quiet danted; then
+        echo "状态: 正在运行 (Active)"
+        echo "监听端口: $(grep 'port =' /etc/danted.conf | awk '{print $4}')"
+        echo "公网地址: $(curl -s ifconfig.me)"
+    else
+        echo "状态: 未运行 (Inactive)"
+        echo "正在尝试获取详细状态..."
+        systemctl status danted --no-pager
+    fi
+    echo "======================"
+    read -s -p "按回车键继续..."
+}
+
+function uninstall() {
+    read -p "确定要卸载 SOCKS5 服务及所有配置吗？(y/n): " CONFIRM
+    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+        echo "取消卸载。"
+        read -s -p "按回车键继续..."
+        return
+    fi
+
+    echo "正在停止服务..."
+    systemctl stop danted
+    systemctl disable danted
+    
+    echo "正在删除程序..."
+    apt-get remove --purge -y dante-server
+    apt-get autoremove -y
+    
+    echo "正在删除用户..."
+    if [ -f "$USER_FILE" ]; then
+        while read -r U; do
+            if id "$U" &>/dev/null; then
+                userdel "$U"
+                echo "已删除用户: $U"
+            fi
+        done < "$USER_FILE"
+        rm "$USER_FILE"
+    fi
+
+    echo "正在删除配置文件..."
+    rm -f /etc/danted.conf
+    rm -f /usr/local/bin/am
+
+    echo "卸载完成。"
+    exit 0
+}
+
+function show_menu() {
+    check_root
+    while true; do
+        clear
+        echo "=================================="
+        echo "       AM SOCKS5 管理面板        "
+        echo "=================================="
+        echo "1. 添加用户 (Add User)"
+        echo "2. 删除用户 (Delete User)"
+        echo "3. 修改密码 (Change Pass)"
+        echo "4. 用户列表 (List Users)"
+        echo "5. 运行状态 (Check Status)"
+        echo "6. 卸载程序 (Uninstall)"
+        echo "0. 退出 (Exit)"
+        echo "=================================="
+        read -p "请输入选项 [0-6]: " num
+        case "$num" in
+            1) add_user ;;
+            2) del_user ;;
+            3) mod_user ;;
+            4) list_users ;;
+            5) check_status ;;
+            6) uninstall ;;
+            0) exit 0 ;;
+            *) echo "无效选项"; sleep 1 ;;
+        esac
+    done
+}
+
+show_menu
+EOF
+chmod +x /usr/local/bin/am
+
 # Check status
 if systemctl is-active --quiet danted; then
     echo "=========================================="
@@ -94,6 +265,8 @@ if systemctl is-active --quiet danted; then
     echo "地址: $(curl -s ifconfig.me):$PORT"
     echo "用户:    $USER"
     echo "密码:    ******"
+    echo ""
+    echo "管理命令: am"
     echo "=========================================="
 else
     echo "错误: dante-server 启动失败。"
