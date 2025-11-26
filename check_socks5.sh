@@ -12,7 +12,7 @@ else
 fi
 
 # 2. Check Port
-PORT=$(grep 'port =' /etc/danted.conf | awk '{print $4}')
+PORT=$(grep 'internal:' /etc/danted.conf | grep 'port =' | awk '{print $5}')
 echo "[2] 检查监听端口 ($PORT)..."
 if netstat -lnp | grep ":$PORT " >/dev/null; then
     echo "SUCCESS: 端口 $PORT 正在监听。"
