@@ -190,6 +190,26 @@ function check_status() {
     read -s -p "按回车键继续..."
 }
 
+function view_config() {
+    PUBLIC_IP=$(curl -s ifconfig.me)
+    SOCKS_PORT=$(grep 'port =' /etc/danted.conf | awk '{print $4}')
+    
+    echo "=== SOCKS5 配置信息 ==="
+    if [ -s "$USER_FILE" ]; then
+        while read -r U; do
+            echo "------------------------"
+            echo "用户名: $U"
+            echo "普通格式: IP: $PUBLIC_IP, 账号: $U, 密码: (请填写您的密码), 端口: $SOCKS_PORT"
+            echo "URL 格式 (SOCKS5): socks5://$U:(请填写您的密码)@$PUBLIC_IP:$SOCKS_PORT"
+            echo "URL 格式 (SOCKS5h): socks5h://$U:(请填写您的密码)@$PUBLIC_IP:$SOCKS_PORT"
+        done < "$USER_FILE"
+    else
+        echo "(无用户记录，请先添加用户)"
+    fi
+    echo "======================"
+    read -s -p "按回车键继续..."
+}
+
 function uninstall() {
     read -p "确定要卸载 SOCKS5 服务及所有配置吗？(y/n): " CONFIRM
     if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
@@ -220,6 +240,7 @@ function uninstall() {
     echo "正在删除配置文件..."
     rm -f /etc/danted.conf
     rm -f /usr/local/bin/am
+    rm -f /etc/danted.conf.bak
 
     echo "卸载完成。"
     exit 0
@@ -237,17 +258,19 @@ function show_menu() {
         echo "3. 修改密码 (Change Pass)"
         echo "4. 用户列表 (List Users)"
         echo "5. 运行状态 (Check Status)"
-        echo "6. 卸载程序 (Uninstall)"
+        echo "6. 查看配置信息 (View Config)"
+        echo "7. 卸载程序 (Uninstall)"
         echo "0. 退出 (Exit)"
         echo "=================================="
-        read -p "请输入选项 [0-6]: " num
+        read -p "请输入选项 [0-7]: " num
         case "$num" in
             1) add_user ;;
             2) del_user ;;
             3) mod_user ;;
             4) list_users ;;
             5) check_status ;;
-            6) uninstall ;;
+            6) view_config ;;
+            7) uninstall ;;
             0) exit 0 ;;
             *) echo "无效选项"; sleep 1 ;;
         esac
