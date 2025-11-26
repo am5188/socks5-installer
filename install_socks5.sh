@@ -6,22 +6,31 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Force input from terminal if running via pipe
+if [ -t 0 ]; then
+    :
+else
+    if [ -e /dev/tty ]; then
+        exec 0</dev/tty
+    fi
+fi
+
 # Get arguments or prompt
 USER=${1}
 PASS=${2}
 PORT=${3:-1080}
 
 if [ -z "$USER" ]; then
-    read -p "请输入 SOCKS5 用户名: " USER < /dev/tty
+    read -p "请输入 SOCKS5 用户名: " USER
 fi
 
 if [ -z "$PASS" ]; then
-    read -s -p "请输入 SOCKS5 密码: " PASS < /dev/tty
+    read -s -p "请输入 SOCKS5 密码: " PASS
     echo ""
 fi
 
 if [ -z "$PORT" ]; then
-    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT < /dev/tty
+    read -p "请输入 SOCKS5 端口 (默认 1080): " PORT
     PORT=${PORT:-1080}
 fi
 
