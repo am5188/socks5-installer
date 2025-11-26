@@ -73,9 +73,9 @@ echo "正在安装 SOCKS5 服务器，配置如下:"
 echo "用户: $USER"
 echo "端口: $PORT"
 
-# Update and install dante-server
+# Update and install dante-server and qrencode
 apt-get update
-apt-get install -y dante-server
+apt-get install -y dante-server qrencode
 
 # Detect network interface
 INTERFACE=$(ip route get 1.1.1.1 | awk '{print $5; exit}')
@@ -121,14 +121,24 @@ else
 fi
 echo "$USER:$PASS" | chpasswd
 
-# Track the initial user
+# Track users and store password securely (readable only by root)
 USER_FILE="/etc/socks5_users"
+PASS_FILE="/etc/socks5_passwd"
 if [ ! -f "$USER_FILE" ]; then
     touch "$USER_FILE"
 fi
+if [ ! -f "$PASS_FILE" ]; then
+    touch "$PASS_FILE"
+    chmod 600 "$PASS_FILE"
+fi
+
+# Update user list
 if ! grep -q "^$USER$" "$USER_FILE"; then
     echo "$USER" >> "$USER_FILE"
 fi
+# Update password file (remove old entry if exists, append new)
+sed -i "/^$USER:/d" "$PASS_FILE"
+echo "$USER:$PASS" >> "$PASS_FILE"
 
 # Allow port in ufw if active
 if ufw status | grep -q "Status: active"; then
@@ -140,22 +150,93 @@ fi
 systemctl restart danted
 systemctl enable danted
 
+# Function to show connection info
+show_connection_info() {
+    local u=$1
+    local p=$2
+    local ip=$3
+    local port=$4
+    
+    echo "=========================================="
+    echo "=== SOCKS5 配置信息 ($u) ==="
+    echo "------------------------------------------"
+    echo "1. 详细信息:"
+    echo "IP:   $ip"
+    echo "账号: $u"
+    echo "密码: $p"
+    echo "端口: $port"
+    echo ""
+    
+    local s5="socks5://$u:$p@$ip:$port"
+    local s5h="socks5h://$u:$p@$ip:$port"
+    
+    echo "2. SOCKS5 链接:"
+    echo "$s5"
+    echo ""
+    
+    echo "3. SOCKS5h 链接:"
+    echo "$s5h"
+    echo ""
+    
+    echo "4. 二维码 (扫码连接):"
+    qrencode -t ANSIUTF8 "$s5"
+    echo "=========================================="
+}
+
 # Create 'am' management script
 cat > /usr/local/bin/am <<'EOF'
 #!/bin/bash
 
 USER_FILE="/etc/socks5_users"
+PASS_FILE="/etc/socks5_passwd"
 
-# Ensure user file exists
-if [ ! -f "$USER_FILE" ]; then
-    touch "$USER_FILE"
-fi
+# Ensure files exist
+touch "$USER_FILE"
+touch "$PASS_FILE"
+chmod 600 "$PASS_FILE"
 
 function check_root() {
     if [ "$EUID" -ne 0 ]; then 
       echo "请使用 root 权限运行 am 命令"
       exit 1
     fi
+}
+
+function get_pass() {
+    local user=$1
+    grep "^$user:" "$PASS_FILE" | cut -d: -f2
+}
+
+function show_connection_info() {
+    local u=$1
+    local p=$2
+    local ip=$3
+    local port=$4
+    
+    echo "=========================================="
+    echo "=== SOCKS5 配置信息 ($u) ==="
+    echo "------------------------------------------"
+    echo "1. 详细信息:"
+    echo "IP:   $ip"
+    echo "账号: $u"
+    echo "密码: $p"
+    echo "端口: $port"
+    echo ""
+    
+    local s5="socks5://$u:$p@$ip:$port"
+    local s5h="socks5h://$u:$p@$ip:$port"
+    
+    echo "2. SOCKS5 链接:"
+    echo "$s5"
+    echo ""
+    
+    echo "3. SOCKS5h 链接:"
+    echo "$s5h"
+    echo ""
+    
+    echo "4. 二维码 (扫码连接):"
+    qrencode -t ANSIUTF8 "$s5"
+    echo "=========================================="
 }
 
 function add_user() {
@@ -165,12 +246,16 @@ function add_user() {
         read -s -p "按回车键继续..."
         return
     fi
-    read -s -p "请输入密码: " NEW_PASS
-    echo ""
+    read -p "请输入密码: " NEW_PASS
     
     useradd -r -s /bin/false "$NEW_USER"
     echo "$NEW_USER:$NEW_PASS" | chpasswd
+    
+    # Update records
     echo "$NEW_USER" >> "$USER_FILE"
+    sed -i "/^$NEW_USER:/d" "$PASS_FILE"
+    echo "$NEW_USER:$NEW_PASS" >> "$PASS_FILE"
+    
     echo "用户 $NEW_USER 添加成功！"
     read -s -p "按回车键继续..."
 }
@@ -186,6 +271,7 @@ function del_user() {
     else
         userdel "$DEL_USER"
         sed -i "/^$DEL_USER$/d" "$USER_FILE"
+        sed -i "/^$DEL_USER:/d" "$PASS_FILE"
         echo "用户 $DEL_USER 已删除。"
     fi
     read -s -p "按回车键继续..."
@@ -200,9 +286,13 @@ function mod_user() {
     if ! id "$MOD_USER" &>/dev/null; then
         echo "错误: 用户不存在。"
     else
-        read -s -p "请输入新密码: " NEW_PASS
-        echo ""
+        read -p "请输入新密码: " NEW_PASS
         echo "$MOD_USER:$NEW_PASS" | chpasswd
+        
+        # Update password record
+        sed -i "/^$MOD_USER:/d" "$PASS_FILE"
+        echo "$MOD_USER:$NEW_PASS" >> "$PASS_FILE"
+        
         echo "用户 $MOD_USER 密码修改成功。"
     fi
     read -s -p "按回车键继续..."
@@ -238,19 +328,25 @@ function view_config() {
     PUBLIC_IP=$(curl -s ifconfig.me)
     SOCKS_PORT=$(grep 'port =' /etc/danted.conf | awk '{print $4}')
     
-    echo "=== SOCKS5 配置信息 ==="
-    if [ -s "$USER_FILE" ]; then
-        while read -r U; do
-            echo "------------------------"
-            echo "用户名: $U"
-            echo "普通格式: IP: $PUBLIC_IP, 账号: $U, 密码: (请填写您的密码), 端口: $SOCKS_PORT"
-            echo "URL 格式 (SOCKS5): socks5://$U:(请填写您的密码)@$PUBLIC_IP:$SOCKS_PORT"
-            echo "URL 格式 (SOCKS5h): socks5h://$U:(请填写您的密码)@$PUBLIC_IP:$SOCKS_PORT"
-        done < "$USER_FILE"
-    else
-        echo "(无用户记录，请先添加用户)"
+    echo "=== 选择要查看的用户 ==="
+    if [ ! -s "$USER_FILE" ]; then
+        echo "(无用户记录)"
+        read -s -p "按回车键返回..."
+        return
     fi
-    echo "======================"
+    
+    select U in $(cat "$USER_FILE"); do
+        if [ -n "$U" ]; then
+            PASS=$(get_pass "$U")
+            if [ -z "$PASS" ]; then
+                PASS="(密码未知)"
+            fi
+            show_connection_info "$U" "$PASS" "$PUBLIC_IP" "$SOCKS_PORT"
+            break
+        else
+            echo "无效选择"
+        fi
+    done
     read -s -p "按回车键继续..."
 }
 
@@ -267,7 +363,7 @@ function uninstall() {
     systemctl disable danted
     
     echo "正在删除程序..."
-    apt-get remove --purge -y dante-server
+    apt-get remove --purge -y dante-server qrencode
     apt-get autoremove -y
     
     echo "正在删除用户..."
@@ -285,6 +381,7 @@ function uninstall() {
     rm -f /etc/danted.conf
     rm -f /usr/local/bin/am
     rm -f /etc/danted.conf.bak
+    rm -f "$PASS_FILE"
 
     echo "卸载完成。"
     exit 0
@@ -321,20 +418,23 @@ function show_menu() {
     done
 }
 
+if [ "$1" == "view_config" ]; then
+   view_config
+   exit 0
+fi
+
 show_menu
 EOF
 chmod +x /usr/local/bin/am
 
 # Check status
 if systemctl is-active --quiet danted; then
-    echo "=========================================="
-    echo "SOCKS5 服务器已安装并成功运行！"
-    echo "地址: $(curl -s ifconfig.me):$PORT"
-    echo "用户:    $USER"
-    echo "密码:    ******"
+    # Display connection info for the newly created user
+    PUBLIC_IP=$(curl -s ifconfig.me)
+    show_connection_info "$USER" "$PASS" "$PUBLIC_IP" "$PORT"
+    
     echo ""
     echo "管理命令: am"
-    echo "=========================================="
 else
     echo "错误: dante-server 启动失败。"
     systemctl status danted
