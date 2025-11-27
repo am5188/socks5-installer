@@ -110,19 +110,30 @@ function uninstall() {
     read -r confirm
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         rm -f "$CONFIG_FILE"
+        echo "配置文件已删除。"
         
-        # Find self location to remove
-        # $0 is the script itself
-        SCRIPT_LOC="$0"
+        # Explicitly look for the binary in common install path
+        TARGET="/usr/local/bin/bnb-test"
+        if [ ! -f "$TARGET" ]; then
+            # Fallback to command -v
+            TARGET=$(command -v bnb-test)
+        fi
         
-        # Check if we have write permission
-        if [ -w "$SCRIPT_LOC" ]; then
-             rm "$SCRIPT_LOC"
-             echo "卸载完成。"
+        if [ -z "$TARGET" ]; then
+            echo "错误: 找不到 bnb-test 可执行文件。"
+            exit 1
+        fi
+
+        echo "正在删除 $TARGET ..."
+        if rm "$TARGET" 2>/dev/null; then
+             echo "✅ 卸载完成。"
         else
-             echo "需要权限删除 $SCRIPT_LOC"
-             sudo rm "$SCRIPT_LOC"
-             echo "卸载完成。"
+             echo "权限不足，正在尝试使用 sudo 删除..."
+             if sudo rm "$TARGET"; then
+                 echo "✅ 卸载完成。"
+             else
+                 echo "❌ 卸载失败。请手动运行: sudo rm $TARGET"
+             fi
         fi
         exit 0
     else
