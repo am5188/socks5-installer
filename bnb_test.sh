@@ -159,7 +159,14 @@ while true; do
             fi
             
             if [ -n "$proxy_input" ]; then
-                run_test "proxy" "$proxy_input"
+                # Simple validation
+                if [[ "$proxy_input" != *"://"* ]]; then
+                    echo "错误: 代理地址格式不正确 (必须包含 ://)"
+                    echo "示例: socks5h://user:pass@ip:port"
+                    sleep 2
+                else
+                    run_test "proxy" "$proxy_input"
+                fi
             else
                 echo "代理地址不能为空。"
                 sleep 1
