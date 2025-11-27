@@ -156,43 +156,6 @@ if ufw status | grep -q "Status: active"; then
     echo "已在 UFW 防火墙中开放端口 $PORT。"
 fi
 
-# Optimize Network MTU for Cloud Environments
-# Set MTU to 1350 to avoid packet fragmentation issues (e.g. with Binance API)
-if ip link set dev "$INTERFACE" mtu 1350; then
-    echo "网络接口 $INTERFACE MTU 已设置为 1350 (优化网络稳定性)。"
-    
-    # Try to persist MTU setting
-    # 1. Netplan (Ubuntu 18.04+)
-    if command -v netplan >/dev/null; then
-        NETPLAN_FILE=$(ls /etc/netplan/*.yaml 2>/dev/null | head -n 1)
-        if [ -n "$NETPLAN_FILE" ]; then
-            # Check if mtu is already set
-            if ! grep -q "mtu:" "$NETPLAN_FILE"; then
-                 # Back up
-                 cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak"
-                 # Simple append attempt - this is risky with YAML indentation, so we be careful
-                 # Assuming standard indentation of 4 spaces or 2 spaces. 
-                 # We will try to insert it under the interface name.
-                 # A robust way is tough with bash sed. Let's just append a comment and let user know.
-                 echo "注意: 请手动检查 $NETPLAN_FILE 确保 mtu: 1350 已配置以永久生效。"
-            fi
-        fi
-    fi
-    
-    # 2. ifupdown (Legacy)
-    if [ -f /etc/network/interfaces ]; then
-        if ! grep -q "mtu 1350" /etc/network/interfaces; then
-             # Check if interface is defined
-             if grep -q "iface $INTERFACE" /etc/network/interfaces; then
-                  sed -i "/iface $INTERFACE/a \    mtu 1350" /etc/network/interfaces
-                  echo "已将 MTU 配置写入 /etc/network/interfaces"
-             fi
-        fi
-    fi
-else
-    echo "警告: 设置 MTU 失败。如果遇到连接重置问题，请尝试手动运行: ip link set dev $INTERFACE mtu 1350"
-fi
-
 # Restart service
 systemctl restart danted
 systemctl enable danted
