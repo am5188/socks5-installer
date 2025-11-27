@@ -38,18 +38,22 @@ function run_test() {
     for ((i=1; i<=TOTAL_REQ; i++)); do
         # Construct curl command
         # We capture http_code and time_total
-        CURL_CMD="curl -s -w %{http_code}:%{time_total} -o /dev/null -m 5"
+        # Capture stderr for debugging
+        CURL_CMD="curl -s -S -w %{http_code}:%{time_total} -o /dev/null -m 5"
         if [ "$mode" == "proxy" ]; then
             CURL_CMD="$CURL_CMD --proxy $proxy"
         fi
         CURL_CMD="$CURL_CMD $TARGET_URL"
         
-        RES=$($CURL_CMD)
+        # Run curl, capture stdout to RES, stderr to temp file
+        ERR_FILE=$(mktemp)
+        RES=$(eval "$CURL_CMD" 2>"$ERR_FILE")
+        CURL_RET=$?
         
         HTTP_CODE=$(echo "$RES" | cut -d: -f1)
         TIME_VAL=$(echo "$RES" | cut -d: -f2)
         
-        if [ "$HTTP_CODE" == "200" ]; then
+        if [ "$CURL_RET" -eq 0 ] && [ "$HTTP_CODE" == "200" ]; then
             ((SUCCESS++))
             STATUS="OK"
             
@@ -67,9 +71,14 @@ function run_test() {
             fi
         else
             ((FAIL++))
-            STATUS="FAIL($HTTP_CODE)"
-            echo "[$i/10] $STATUS"
+            # Read error message (first line only to keep it clean)
+            ERR_MSG=$(head -n 1 "$ERR_FILE")
+            if [ -z "$ERR_MSG" ]; then ERR_MSG="HTTP $HTTP_CODE"; fi
+            
+            STATUS="FAIL"
+            printf "[%02d/10] %s - %s\n" "$i" "$STATUS" "$ERR_MSG"
         fi
+        rm -f "$ERR_FILE"
     done
 
     echo ""
