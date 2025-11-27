@@ -35,25 +35,45 @@ function run_test() {
 
     echo "开始测试 (10次请求)..."
 
+    # Pre-check connectivity
+    echo "正在进行连通性预检..."
+    CHECK_CMD="curl -s --connect-timeout 5 -w %{http_code} -o /dev/null"
+    if [ "$mode" == "proxy" ]; then
+        CHECK_CMD="$CHECK_CMD --proxy $proxy"
+    fi
+    CHECK_CMD="$CHECK_CMD $TARGET_URL"
+    
+    CHECK_RES=$($CHECK_CMD)
+    if [ "$CHECK_RES" != "200" ]; then
+        echo "❌ 预检失败 (HTTP $CHECK_RES)"
+        echo "正在尝试获取详细错误信息..."
+        echo "-------------------------------------------------------"
+        if [ "$mode" == "proxy" ]; then
+            curl -v --connect-timeout 5 --proxy "$proxy" "$TARGET_URL" 2>&1 | grep -E "curl:|Proxy|Connected|Recv"
+        else
+            curl -v --connect-timeout 5 "$TARGET_URL" 2>&1 | grep -E "curl:|Connected|Recv"
+        fi
+        echo "-------------------------------------------------------"
+        echo "测试终止。请检查网络或代理设置。"
+        read -p "按回车键继续..."
+        return
+    fi
+    echo "✅ 预检通过。"
+
     for ((i=1; i<=TOTAL_REQ; i++)); do
         # Construct curl command
-        # We capture http_code and time_total
-        # Capture stderr for debugging
-        CURL_CMD="curl -s -S -w %{http_code}:%{time_total} -o /dev/null -m 5"
+        CURL_CMD="curl -s -w %{http_code}:%{time_total} -o /dev/null -m 5"
         if [ "$mode" == "proxy" ]; then
             CURL_CMD="$CURL_CMD --proxy $proxy"
         fi
         CURL_CMD="$CURL_CMD $TARGET_URL"
         
-        # Run curl, capture stdout to RES, stderr to temp file
-        ERR_FILE=$(mktemp)
-        RES=$(eval "$CURL_CMD" 2>"$ERR_FILE")
-        CURL_RET=$?
+        RES=$($CURL_CMD)
         
         HTTP_CODE=$(echo "$RES" | cut -d: -f1)
         TIME_VAL=$(echo "$RES" | cut -d: -f2)
         
-        if [ "$CURL_RET" -eq 0 ] && [ "$HTTP_CODE" == "200" ]; then
+        if [ "$HTTP_CODE" == "200" ]; then
             ((SUCCESS++))
             STATUS="OK"
             
@@ -64,21 +84,15 @@ function run_test() {
                 TIME_MS=$(echo "$TIME_VAL * 1000" | bc -l)
                 printf "[%02d/10] %s - %.2f ms\n" "$i" "$STATUS" "$TIME_MS"
             else
-                # Fallback integer math
                 TIME_INT=${TIME_VAL%.*}
                 TOTAL_TIME_SEC=$((TOTAL_TIME_SEC + TIME_INT)) 
                 echo "[$i/10] $STATUS - ${TIME_VAL}s"
             fi
         else
             ((FAIL++))
-            # Read error message (first line only to keep it clean)
-            ERR_MSG=$(head -n 1 "$ERR_FILE")
-            if [ -z "$ERR_MSG" ]; then ERR_MSG="HTTP $HTTP_CODE"; fi
-            
-            STATUS="FAIL"
-            printf "[%02d/10] %s - %s\n" "$i" "$STATUS" "$ERR_MSG"
+            STATUS="FAIL($HTTP_CODE)"
+            echo "[$i/10] $STATUS"
         fi
-        rm -f "$ERR_FILE"
     done
 
     echo ""
