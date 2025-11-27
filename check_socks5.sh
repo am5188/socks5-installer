@@ -110,47 +110,87 @@ run_http_test() {
     local min_time=9999
     local max_time=0
     
-    echo "    -> 开始测试 (模式: $([ "$use_proxy" == "true" ] && echo "代理转发" || echo "直连")) ..."
+        echo "    -> 开始测试 (模式: $([ "$use_proxy" == "true" ] && echo "代理转发" || echo "直连")) ..." >&2
     
-    for ((i=1; i<=total_req; i++)); do
-        # Format: http_code:time_total
-        if [ "$use_proxy" == "true" ]; then
-            RES=$(curl -s -w "% {http_code}:%{time_total}" -o /dev/null -m 3 --proxy "$proxy_url" "$URL_TIME")
-        else
-            RES=$(curl -s -w "% {http_code}:%{time_total}" -o /dev/null -m 3 "$URL_TIME")
-        fi
         
-        CODE=$(echo "$RES" | cut -d: -f1)
-        TIME=$(echo "$RES" | cut -d: -f2)
-        
-        if [ "$CODE" == "200" ]; then
-            ((success++))
-            # BC for float comparison
-            if (( $(echo "$TIME < $min_time" | bc -l) )); then min_time=$TIME; fi
-            if (( $(echo "$TIME > $max_time" | bc -l) )); then max_time=$TIME; fi
-            total_time=$(echo "$total_time + $TIME" | bc -l)
-        else
-            ((fail++))
-        fi
-        # Progress bar
-        echo -n "."
-    done
-    echo " 完成"
     
-    if [ "$success" -gt 0 ]; then
-        avg_time=$(echo "$total_time / $success * 1000" | bc -l) # Convert to ms
-        min_time_ms=$(echo "$min_time * 1000" | bc -l)
-        max_time_ms=$(echo "$max_time * 1000" | bc -l)
+        for ((i=1; i<=total_req; i++)); do
+    
+            # Format: http_code:time_total
+    
+            if [ "$use_proxy" == "true" ]; then
+    
+                RES=$(curl -s -w "%{http_code}:%{time_total}" -o /dev/null -m 3 --proxy "$proxy_url" "$URL_TIME")
+    
+            else
+    
+                RES=$(curl -s -w "%{http_code}:%{time_total}" -o /dev/null -m 3 "$URL_TIME")
+    
+            fi
+    
+            
+    
+            CODE=$(echo "$RES" | cut -d: -f1)
+    
+            TIME=$(echo "$RES" | cut -d: -f2)
+    
+            
+    
+            if [ "$CODE" == "200" ]; then
+    
+                ((success++))
+    
+                # BC for float comparison
+    
+                if (( $(echo "$TIME < $min_time" | bc -l) )); then min_time=$TIME; fi
+    
+                if (( $(echo "$TIME > $max_time" | bc -l) )); then max_time=$TIME; fi
+    
+                total_time=$(echo "$total_time + $TIME" | bc -l)
+    
+            else
+    
+                ((fail++))
+    
+            fi
+    
+            # Progress bar
+    
+            echo -n "." >&2
+    
+        done
+    
+        echo " 完成" >&2
+    
         
-        printf "    成功率: %d/%d (%.0f%%)\n" "$success" "$total_req" "$((success * 100 / total_req))"
-        printf "    HTTP耗时: 平均 %.2f ms | 最小 %.2f ms | 最大 %.2f ms\n" "$avg_time" "$min_time_ms" "$max_time_ms"
-        
-        # Return avg for comparison
-        echo "$avg_time"
-    else
-        echo "    所有请求均失败！"
-        echo "9999"
-    fi
+    
+        if [ "$success" -gt 0 ]; then
+    
+            avg_time=$(echo "$total_time / $success * 1000" | bc -l) # Convert to ms
+    
+            min_time_ms=$(echo "$min_time * 1000" | bc -l)
+    
+            max_time_ms=$(echo "$max_time * 1000" | bc -l)
+    
+            
+    
+            printf "    成功率: %d/%d (%.0f%%)\n" "$success" "$total_req" "$((success * 100 / total_req))" >&2
+    
+            printf "    HTTP耗时: 平均 %.2f ms | 最小 %.2f ms | 最大 %.2f ms\n" "$avg_time" "$min_time_ms" "$max_time_ms" >&2
+    
+            
+    
+            # Return avg for comparison
+    
+            echo "$avg_time"
+    
+        else
+    
+            echo "    所有请求均失败！" >&2
+    
+            echo "9999"
+    
+        fi
 }
 
 echo "    [3.1] 直连并发测试:"
