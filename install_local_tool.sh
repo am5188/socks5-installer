@@ -1,6 +1,9 @@
 #!/bin/bash
 
-echo "=== 币安 API 本地基准测试工具安装器 ==="
+# Force immediate output flush
+exec 1>&1
+
+echo "=== 币安 API 本地基准测试工具安装器 v2 ==="
 
 # Detect OS
 OS_TYPE="unknown"
@@ -18,8 +21,8 @@ echo "检测到系统: $OS_TYPE"
 
 INSTALL_DIR="/usr/local/bin"
 CMD_NAME="bnb-test"
-# Use a random query param to bypass cache
-DOWNLOAD_URL="https://raw.githubusercontent.com/am5188/socks5-installer/main/bnb_test.sh?v=$(date +%s)"
+# Dynamic download URL with cache busting
+DOWNLOAD_URL="https://raw.githubusercontent.com/am5188/socks5-installer/main/bnb_test.sh?t=$(date +%s)"
 
 # Check root for install if not windows
 if [ "$OS_TYPE" != "windows" ] && [ "$EUID" -ne 0 ]; then
@@ -28,12 +31,12 @@ else
     SUDO=""
 fi
 
-echo "正在下载最新版工具..."
+echo "正在从 GitHub 下载最新版工具..."
 # Download to temp file first
 curl -fsSL "$DOWNLOAD_URL" -o ./bnb-test-temp
 
 if [ ! -s ./bnb-test-temp ]; then
-    echo "❌ 下载失败。请检查网络连接。"
+    echo "❌ 下载失败 (文件为空)。请检查网络连接或 GitHub 访问情况。"
     exit 1
 fi
 
@@ -45,19 +48,18 @@ if [ "$OS_TYPE" == "windows" ]; then
     echo "✅ 安装完成！"
     echo "您可以直接运行: ~/$CMD_NAME"
 else
-    echo "正在安装到 $INSTALL_DIR ..."
-    
-    # Remove old version if exists
+    # Clean up old version explicitly
     if [ -f "$INSTALL_DIR/$CMD_NAME" ]; then
-        echo "覆盖旧版本..."
+        echo "🗑️  发现旧版本，正在清理..."
         $SUDO rm -f "$INSTALL_DIR/$CMD_NAME"
     fi
-    
+
+    echo "📦 正在安装到 $INSTALL_DIR ..."
     $SUDO mv ./bnb-test-temp "$INSTALL_DIR/$CMD_NAME"
     
     if [ $? -eq 0 ]; then
         echo "✅ 安装成功！"
-        echo "您现在可以在终端任何地方输入 '$CMD_NAME' 来启动测试。"
+        echo "您现在可以在终端输入 'bnb-test' 来启动测试。"
     else
         echo "❌ 安装失败。移动文件时出错，请检查权限。"
         rm ./bnb-test-temp
