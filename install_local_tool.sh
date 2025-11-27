@@ -6,7 +6,7 @@ echo "此脚本将在您的系统路径中安装 'bnb-test' 命令。"
 # Detect OS
 OS_TYPE="unknown"
 case "$OSTYPE" in
-  solaris*) OS_TYPE="linux" ;; # Treat as linux-like
+  solaris*) OS_TYPE="linux" ;; 
   darwin*)  OS_TYPE="mac" ;; 
   linux*)   OS_TYPE="linux" ;; 
   bsd*)     OS_TYPE="bsd" ;; 
@@ -23,14 +23,21 @@ CONFIG_FILE="$HOME/.bnb_test_config"
 
 # Check root for install if not windows
 if [ "$OS_TYPE" != "windows" ] && [ "$EUID" -ne 0 ]; then
-    echo "提示: 安装到 /usr/local/bin 可能需要密码 (sudo)。"
     SUDO="sudo"
 else
     SUDO=""
 fi
 
+# Check if already installed
+if [ -f "$INSTALL_DIR/$CMD_NAME" ]; then
+    echo "⚠️  检测到旧版本已安装。"
+    echo "正在覆盖安装..."
+    $SUDO rm -f "$INSTALL_DIR/$CMD_NAME"
+fi
+
 # Create the script content
-cat > ./bnb-test-temp <<EOF
+# We use 'EOF' (quoted) to prevent variable expansion during installation
+cat > ./bnb-test-temp <<'EOF'
 #!/bin/bash
 
 CONFIG_FILE="$HOME/.bnb_test_config"
@@ -69,13 +76,15 @@ function run_test() {
     echo "开始测试 (10次请求)..."
 
     for ((i=1; i<=TOTAL_REQ; i++)); do
+        # Construct curl command
+        # We capture http_code and time_total
         CURL_CMD="curl -s -w %{http_code}:%{time_total} -o /dev/null -m 5"
         if [ "$mode" == "proxy" ]; then
             CURL_CMD="$CURL_CMD --proxy $proxy"
         fi
         CURL_CMD="$CURL_CMD $TARGET_URL"
         
-        RES=$(eval $CURL_CMD)
+        RES=$($CURL_CMD)
         
         HTTP_CODE=$(echo "$RES" | cut -d: -f1)
         TIME_VAL=$(echo "$RES" | cut -d: -f2)
@@ -91,7 +100,10 @@ function run_test() {
                 TIME_MS=$(echo "$TIME_VAL * 1000" | bc -l)
                 printf "[%02d/10] %s - %.2f ms\n" "$i" "$STATUS" "$TIME_MS"
             else
-                TOTAL_TIME_SEC=$(echo "$TOTAL_TIME_SEC + $TIME_VAL" | bc 2>/dev/null || echo 0) 
+                # Fallback integer math
+                # Remove decimal point for rough sum
+                TIME_INT=${TIME_VAL%.*}
+                TOTAL_TIME_SEC=$((TOTAL_TIME_SEC + TIME_INT)) 
                 echo "[$i/10] $STATUS - ${TIME_VAL}s"
             fi
         else
@@ -139,13 +151,21 @@ function uninstall() {
     read -r confirm
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         rm -f "$CONFIG_FILE"
-        # Self-destruction needs careful handling of sudo
-        if [ -w "$INSTALL_DIR/$CMD_NAME" ]; then
-             rm "$INSTALL_DIR/$CMD_NAME"
+        
+        # Find self location to remove (simple guess)
+        SCRIPT_LOC=$(command -v bnb-test)
+        if [ -z "$SCRIPT_LOC" ]; then
+             # Fallback
+             SCRIPT_LOC="/usr/local/bin/bnb-test"
+        fi
+        
+        if [ -w "$SCRIPT_LOC" ]; then
+             rm "$SCRIPT_LOC"
              echo "卸载完成。"
         else
-             echo "请使用 sudo rm $INSTALL_DIR/$CMD_NAME 手动删除命令文件。"
-             echo "配置文件已删除。"
+             echo "需要权限删除 $SCRIPT_LOC"
+             sudo rm "$SCRIPT_LOC"
+             echo "卸载完成。"
         fi
         exit 0
     else
@@ -168,7 +188,7 @@ while true; do
     case "$choice" in
         1)
             run_test "direct" ""
-            ;;
+            ;; 
         2)
             if [ -n "$SAVED_PROXY" ]; then
                 read -p "使用保存的代理 ($SAVED_PROXY)? [Y/n]: " p_choice
@@ -187,17 +207,17 @@ while true; do
                 echo "代理地址不能为空。"
                 sleep 1
             fi
-            ;;
+            ;; 
         3)
             uninstall
-            ;;
+            ;; 
         0)
             exit 0
-            ;;
+            ;; 
         *)
             echo "无效选项"
             sleep 1
-            ;;
+            ;; 
     esac
 done
 EOF
