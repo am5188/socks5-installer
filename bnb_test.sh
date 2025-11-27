@@ -35,25 +35,38 @@ function run_test() {
 
     echo "开始测试 (10次请求)..."
 
-    # Pre-check connectivity
-    echo "正在进行连通性预检..."
-    CHECK_CMD="curl -s --connect-timeout 5 -w %{http_code} -o /dev/null"
-    if [ "$mode" == "proxy" ]; then
-        CHECK_CMD="$CHECK_CMD --proxy $proxy"
-    fi
-    CHECK_CMD="$CHECK_CMD $TARGET_URL"
+    # Run curl, capture stdout to RES, stderr to temp file
     
-    CHECK_RES=$($CHECK_CMD)
-    if [ "$CHECK_RES" != "200" ]; then
-        echo "❌ 预检失败 (HTTP $CHECK_RES)"
+    # Pre-check connectivity
+    # Capture verbose output for detailed error analysis
+    PRECHECK_VERBOSE_ERR=$(curl -v --connect-timeout 5 --proxy "$proxy" "$TARGET_URL" 2>&1)
+    PRECHECK_CURL_STATUS=$?
+    
+    # Extract HTTP Code from verbose output
+    PRECHECK_HTTP_CODE=$(echo "$PRECHECK_VERBOSE_ERR" | grep -E "^< HTTP/" | awk '{print $3}' | head -n 1)
+
+    if [ "$PRECHECK_CURL_STATUS" -ne 0 ] || [ "$PRECHECK_HTTP_CODE" != "200" ]; then
+        echo "❌ 预检失败 (Curl Exit Code $PRECHECK_CURL_STATUS, HTTP $PRECHECK_HTTP_CODE)"
         echo "正在尝试获取详细错误信息..."
         echo "-------------------------------------------------------"
-        if [ "$mode" == "proxy" ]; then
-            curl -v --connect-timeout 5 --proxy "$proxy" "$TARGET_URL" 2>&1 | grep -E "curl:|Proxy|Connected|Recv"
-        else
-            curl -v --connect-timeout 5 "$TARGET_URL" 2>&1 | grep -E "curl:|Connected|Recv"
-        fi
+        echo "$PRECHECK_VERBOSE_ERR" | grep -E "curl:|Proxy|Connected|Recv|SSL"
         echo "-------------------------------------------------------"
+        
+        # Analyze specific error types based on curl output
+        if echo "$PRECHECK_VERBOSE_ERR" | grep -q "Connection refused"; then
+            echo "诊断: 本地到代理IP的端口连接被拒绝。请确认代理IP和端口是否正确，并检查本地网络和代理服务器防火墙/安全组设置。"
+        elif echo "$PRECHECK_VERBOSE_ERR" | grep -q "Connection timed out"; then
+            echo "诊断: 代理握手或数据传输超时。这通常意味着 SOCKS5 协议流量被探测和阻断 (如 GFW)，或本地到代理的网络链路不稳定。"
+            echo "建议: 尝试使用 SSH 隧道或 Shadowsocks 等加密代理方案。如果仍需使用 SOCKS5，请在代理服务器上运行 'check_socks5.sh' 排除服务器自身出站问题。"
+        elif echo "$PRECHECK_VERBOSE_ERR" | grep -q "Could not resolve proxy"; then
+            echo "诊断: 无法解析代理IP地址。请检查代理IP地址是否正确，或本地DNS设置问题。"
+        elif echo "$PRECHECK_VERBOSE_ERR" | grep -q "Proxy authentication failed"; then
+            echo "诊断: 代理认证失败。请检查代理链接中的用户名和密码是否正确。"
+        elif echo "$PRECHECK_VERBOSE_ERR" | grep -q "Network is unreachable"; then
+            echo "诊断: 本地到代理IP网络不通。请检查代理IP是否正确，或本地网络配置。"
+        else
+            echo "诊断: 未知代理连接错误。请检查网络或代理设置。"
+        fi
         echo "测试终止。请检查网络或代理设置。"
         read -p "按回车键继续..."
         return
